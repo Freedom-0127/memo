@@ -356,7 +356,7 @@ function render(){
   let list=document.getElementById('list'),empty=document.getElementById('empty');
   list.innerHTML='';
   if(!ms.length){empty.style.display='block';list.style.display='none'}
-  else{empty.style.display='none';list.style.display='block'}
+  else{empty.style.display='none';list.style.display=layout==='horizontal'?'grid':'block'}
   list.className=layout==='horizontal'?'list-horizontal':'list-vertical';
   ms.forEach(m=>list.appendChild(createCard(m)));
   updateStatus();updateCatOptions();
