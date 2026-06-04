@@ -66,7 +66,7 @@ body{
 }
 
 /* ── 卡片 ── */
-.card-wrap{position:relative;margin-bottom:8px;border-radius:var(--radius);overflow:hidden}
+.card-wrap{position:relative;margin-bottom:8px;border-radius:var(--radius);overflow:visible}
 .card{
   position:relative;background:var(--card);padding:14px;display:flex;gap:10px;
   align-items:stretch;border-radius:var(--radius);
@@ -83,7 +83,7 @@ body{
   border-radius:var(--radius)
 }
 .swipe-actions button{
-  width:72px;border:none;color:#fff;font-size:13px;font-weight:600;cursor:pointer;
+  width:70px;border:none;color:#fff;font-size:14px;font-weight:600;cursor:pointer;
   display:flex;align-items:center;justify-content:center;
   font-family:-apple-system,BlinkMacSystemFont,sans-serif
 }
@@ -448,7 +448,7 @@ function createCard(m){
     let dx=e.touches[0].clientX-sSX;
     if(Math.abs(dx)>5){
       // Only allow left swipe (negative transform)
-      let tx=Math.max(-150,Math.min(0,sOX+dx));
+      let tx=Math.max(-140,Math.min(0,sOX+dx));
       card.style.transform='translateX('+tx+'px)';
       e.preventDefault();
     }
@@ -457,8 +457,8 @@ function createCard(m){
     if(!sActive)return;sActive=false;
     card.style.transition='transform .3s cubic-bezier(.25,.8,.25,1.2)';
     let tx=parseFloat(card.style.transform.replace(/translateX\(([^p]+)px\).*/,'$1')||0);
-    // Snap: below -75px → fully open (-150px), otherwise close
-    card.style.transform=tx<-75?'translateX(-150px)':'';
+    // Snap: below -70px → fully open (-140px), otherwise close
+    card.style.transform=tx<-70?'translateX(-140px)':'';
   });
   // Tap on card body closes swipe
   card.addEventListener('click',e=>{
