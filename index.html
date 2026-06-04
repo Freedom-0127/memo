@@ -187,6 +187,20 @@ body{
 .dlg .font-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 
 /* ghost */
+/* horizontal grid */
+.list-horizontal{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.list-horizontal .card-wrap{margin-bottom:0}
+.list-horizontal .card{flex-direction:column;padding:12px;gap:6px}
+.list-horizontal .card .grip{flex-direction:row;width:100%;min-width:0;padding:0;gap:6px}
+.list-horizontal .card .grip span{width:3px;height:3px}
+.list-horizontal .card .body{gap:3px}
+.list-horizontal .card .preview{-webkit-line-clamp:1;font-size:11px}
+.list-horizontal .card .meta{font-size:10px}
+.list-horizontal .card .actions{flex-direction:row;gap:6px}
+.list-horizontal .card .actions button{width:26px;height:26px;font-size:12px}
+.list-horizontal .card::before{left:0;top:8px;bottom:8px;width:3px}
+.list-horizontal .swipe-actions{display:none}
+
 .ghost{position:fixed;z-index:200;pointer-events:none;background:var(--card);border-radius:var(--radius);padding:12px 18px;box-shadow:0 12px 36px rgba(0,0,0,.18);font-weight:700;font-size:14px;opacity:.92;transform:translate(-50%,-50%)}
 
 /* status bar */
@@ -212,7 +226,7 @@ body{
 <!-- 内容区 -->
 <div class="content" id="content">
   <div class="refresh-indicator" id="refreshHint"></div>
-  <div id="list"></div>
+  <div id="list" class="list-vertical"></div>
   <div class="empty" id="empty"><span class="big">📝</span>暂无备忘录<br>点击 ＋ 开始添加</div>
   <div class="status-bar" id="status"></div>
 </div>
@@ -343,6 +357,7 @@ function render(){
   list.innerHTML='';
   if(!ms.length){empty.style.display='block';list.style.display='none'}
   else{empty.style.display='none';list.style.display='block'}
+  list.className=layout==='horizontal'?'list-horizontal':'list-vertical';
   ms.forEach(m=>list.appendChild(createCard(m)));
   updateStatus();updateCatOptions();
 }
@@ -601,7 +616,8 @@ function setTab(t){
 }
 function toggleLayout(){
   layout=layout==='vertical'?'horizontal':'vertical';
-  document.getElementById('layoutTabBtn').querySelector('.ico').textContent=layout==='vertical'?'☰':'▦';
+  let ico=document.getElementById('layoutTabBtn').querySelector('.ico');
+  ico.textContent=layout==='horizontal'?'▦':'☰';
   document.querySelectorAll('.tab-bar button').forEach(b=>b.classList.remove('active'));
   document.getElementById('layoutTabBtn').classList.add('active');
   render();
