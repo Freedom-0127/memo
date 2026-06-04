@@ -419,7 +419,7 @@ function createCard(m){
   let encIcon=m.encrypted?'🔒 ':'';
 
   card.innerHTML=
-    '<div class="grip">'+'<span></span>'.repeat(6)+'</div>'+
+    '<div class="grip" data-mid="'+m.id+'">'+'<span></span>'.repeat(6)+'</div>'+
     '<div class="body">'+
       '<div class="top"><span class="title" style="font-size:'+(Math.min(fs+3,26))+'px;font-weight:bold;color:'+fc+'">'+pre+' '+encIcon+h(m.title)+'</span><span class="cat">'+h(m.category)+'</span></div>'+
       '<div class="preview todo-area" style="font-size:'+fs+'px;font-weight:'+fw+';color:'+fc+'">'+cntDisplay+'</div>'+
@@ -427,95 +427,23 @@ function createCard(m){
     '</div>'+
     '<div class="actions">'+actHTML+'</div>';
 
-  // ── Swipe actions ──
-  let sa=document.createElement('div');sa.className='swipe-actions';
-  let eBtn=document.createElement('button');eBtn.className='sw-edit';eBtn.textContent='编辑';
-  eBtn.onclick=e=>{e.stopPropagation();openDialog(m.id)};
-  let dBtn=document.createElement('button');dBtn.className='sw-del';dBtn.textContent='删除';
-  dBtn.onclick=e=>{e.stopPropagation();del(m.id)};
-  sa.appendChild(eBtn);sa.appendChild(dBtn);
-  wrap.appendChild(sa);wrap.appendChild(card);
-
-  // ── Touch events for swipe + drag ──
-  let startX=0,startY=0,offsetX=0,dragging=false,moved=false,swiped=false;
-  function onStart(e){
-    startX=e.touches[0].clientX;startY=e.touches[0].clientY;
-    offsetX=parseFloat(card.style.transform.replace(/translateX\(([^p]+)px\).*/,'$1')||0);
-    dragging=true;moved=false;swiped=false;
-    card.style.transition='none';
-  }
-  function onMove(e){
-    if(!dragging)return;
-    let dx=e.touches[0].clientX-startX,dy=e.touches[0].clientY-startY;
-    if(!moved&&Math.abs(dx)<5&&Math.abs(dy)<5)return;
-    moved=true;
-    if(!swiped&&Math.abs(dx)>Math.abs(dy)){
-      // horizontal swipe
-      swiped=true;card.style.transform='translateX('+(Math.max(-144,Math.min(144,offsetX+dx)))+'px)';
-      e.preventDefault();
-    }else if(!swiped){
-      // vertical drag — use ghost
-      if(!card.classList.contains('dragging')){
-        card.classList.add('dragging');
-        document.getElementById('ghost').style.display='block';
-      }
-      let g=document.getElementById('ghost');
-      g.textContent=(m.pinned?'📌':'')+(m.reminder_time?'⏰':'')+' '+m.title;
-      g.style.left=e.touches[0].clientX+'px';g.style.top=e.touches[0].clientY+'px';
-    }
-  }
-  function onEnd(e){
-    dragging=false;
+  // ── Swipe on card body (horizontal only) ──
+  let sSX=0,sOX=0,sActive=false;
+  card.addEventListener('touchstart',e=>{
+    if(e.target.closest('.grip')||e.target.closest('.actions')||e.target.closest('button')||e.target.closest('input'))return;
+    sSX=e.touches[0].clientX;sOX=parseFloat(card.style.transform.replace(/translateX\(([^p]+)px\).*/,'$1')||0);
+    sActive=true;card.style.transition='none';
+  },{passive:false});
+  card.addEventListener('touchmove',e=>{
+    if(!sActive)return;
+    let dx=e.touches[0].clientX-sSX;
+    if(Math.abs(dx)>5){card.style.transform='translateX('+(Math.max(-144,Math.min(144,sOX+dx)))+'px)';e.preventDefault();}
+  },{passive:false});
+  card.addEventListener('touchend',()=>{
+    if(!sActive)return;sActive=false;
     card.style.transition='transform .3s cubic-bezier(.25,.8,.25,1.2)';
-    document.getElementById('ghost').style.display='none';
-    if(card.classList.contains('dragging')){
-      card.classList.remove('dragging');
-      if(moved&&!swiped){
-        let x=e.changedTouches[0].clientX,y=e.changedTouches[0].clientY;
-        let afterId=findDropTarget(x,y,m.id);
-        reorder(m.id,afterId);
-        document.getElementById('sortBy').value='manual';
-        render();
-      }
-    }
-    if(swiped){
-      let tx=parseFloat(card.style.transform.replace(/translateX\(([^p]+)px\).*/,'$1')||0);
-      if(tx<-72){tx=-144}else if(tx>72){tx=144}else{tx=0}
-      card.style.transform='translateX('+tx+'px)';
-      if(tx===0)swiped=false;
-    }else{card.style.transform='';swiped=false}
-    moved=false;
-  }
-  card.addEventListener('touchstart',onStart,{passive:false});
-  card.addEventListener('touchmove',onMove,{passive:false});
-  card.addEventListener('touchend',onEnd);
-  card.addEventListener('touchcancel',onEnd);
-
-  // Mouse drag (desktop only)
-  let grip=card.querySelector('.grip');
-  let dragData=null;
-  grip.addEventListener('pointerdown',e=>{
-    dragData={sx:e.clientX,sy:e.clientY,moved:false};
-    card.classList.add('dragging');card.setPointerCapture(e.pointerId);
-  });
-  grip.addEventListener('pointermove',e=>{
-    if(!dragData)return;
-    if(!dragData.moved&&Math.abs(e.clientX-dragData.sx)<5&&Math.abs(e.clientY-dragData.sy)<5)return;
-    dragData.moved=true;
-    let g=document.getElementById('ghost');g.style.display='block';
-    g.textContent=(m.pinned?'📌':'')+(m.reminder_time?'⏰':'')+' '+m.title;
-    g.style.left=e.clientX+'px';g.style.top=e.clientY+'px';
-  });
-  grip.addEventListener('pointerup',e=>{
-    document.getElementById('ghost').style.display='none';
-    card.classList.remove('dragging');
-    if(dragData&&dragData.moved){
-      let afterId=findDropTarget(e.clientX,e.clientY,m.id);
-      reorder(m.id,afterId);
-      document.getElementById('sortBy').value='manual';
-      render();
-    }
-    dragData=null;
+    let tx=parseFloat(card.style.transform.replace(/translateX\(([^p]+)px\).*/,'$1')||0);
+    card.style.transform=Math.abs(tx)>72?'translateX(144px)':'';
   });
   return wrap;
 }
@@ -608,12 +536,12 @@ function openDialog(id){
 
   let cp=document.getElementById('colorPalette');
   cp.innerHTML=DEFAULT_COLORS.map((c,i)=>{
-    let bg=c.val?c.val:'#e5e5ea';
-    let extra=c.val?'':' border:2px solid #aaa;';
-    return '<div class="color-dot'+(selColor===c.val||(!c.val&&!selColor)?' sel':'')+'" style="background:'+bg+';'+extra+'" title="'+c.n+'" onclick="pickColor('+i+')"><span style="font-size:10px;color:#888;display:'+(c.val?'none':'block')+'">默认</span></div>';
+    let bg=c.val?c.val:'transparent';
+    let border=c.val?'':'2px dashed #aaa';
+    let selected=(c.val===null&&(selColor===null||selColor===undefined))||(c.val!==null&&selColor===c.val);
+    return '<div class="color-dot'+ (selected?' sel':'') +'" style="background:'+bg+';border:'+border+'" title="'+c.n+'" onclick="pickColor('+i+')"></div>';
   }).join('')+
-  '<div class="color-dot" style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);border-radius:50%;width:30px;height:30px;cursor:pointer;position:relative;overflow:hidden" onclick="document.getElementById(\'customColor\').click()" title="取色盘">'+
-  '<input type="color" id="customColor" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="pickCustom()"></div>';
+  '<div class="color-dot" style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);border-radius:50%;width:30px;height:30px;cursor:pointer;position:relative;overflow:hidden" onclick="document.getElementById(\'customColor\').click()" title="取色盘"><input type="color" id="customColor" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="pickCustom()"></div>';
 
   buildPresets(m);
   document.getElementById('dlgOverlay').style.display='flex';
@@ -621,8 +549,20 @@ function openDialog(id){
 }
 function closeDialog(){document.getElementById('dlgOverlay').style.display='none';editingId=null;}
 
-function pickColor(i){selColor=DEFAULT_COLORS[i].val;document.querySelectorAll('.color-dot').forEach((d,j)=>d.classList.toggle('sel',j===i));}
-function pickCustom(){selColor=document.getElementById('customColor').value;document.querySelectorAll('.color-dot').forEach(d=>d.classList.remove('sel'));}
+function pickColor(i){
+  selColor=DEFAULT_COLORS[i].val;
+  document.querySelectorAll('.color-dot').forEach((d,j)=>{
+    let cv=DEFAULT_COLORS[j]?DEFAULT_COLORS[j].val:undefined;
+    if(cv===undefined)return; // skip the rainbow picker dot
+    let selected=(cv===null&&selColor===null)||(cv!==null&&cv===selColor);
+    d.classList.toggle('sel',selected);
+  });
+}
+function pickCustom(){selColor=document.getElementById('customColor').value;
+  document.querySelectorAll('.color-dot').forEach((d,j)=>{
+    if(DEFAULT_COLORS[j])d.classList.remove('sel');
+  });
+}
 
 function buildPresets(m){
   let now=new Date();now.setSeconds(0,0);let t=now.toISOString().slice(0,10);
@@ -768,6 +708,39 @@ function scheduleReminders(){
   });
 }
 document.addEventListener('click',()=>{if('Notification' in window&&Notification.permission==='default')Notification.requestPermission()},{once:true});
+
+// ── Global drag on grip (event delegation) ──
+(function(){
+  let dragCard=null,dragMemo=null,dSX=0,dSY=0,dMoved=false;
+  document.addEventListener('pointerdown',e=>{
+    let grip=e.target.closest('.grip');if(!grip)return;
+    let card=grip.closest('.card');if(!card||!card.dataset.id)return;
+    let id=card.dataset.id;dragMemo=memos.find(m=>m.id===id);if(!dragMemo)return;
+    dragCard=card;dSX=e.clientX;dSY=e.clientY;dMoved=false;
+    card.classList.add('dragging');card.setPointerCapture(e.pointerId);
+    e.preventDefault();e.stopPropagation();
+  });
+  document.addEventListener('pointermove',e=>{
+    if(!dragCard)return;
+    if(!dMoved&&Math.abs(e.clientX-dSX)<5&&Math.abs(e.clientY-dSY)<5)return;
+    dMoved=true;
+    let g=document.getElementById('ghost');g.style.display='block';
+    g.textContent=(dragMemo.pinned?'📌':'')+(dragMemo.reminder_time?'⏰':'')+' '+dragMemo.title;
+    g.style.left=e.clientX+'px';g.style.top=e.clientY+'px';
+  });
+  document.addEventListener('pointerup',e=>{
+    if(!dragCard)return;
+    document.getElementById('ghost').style.display='none';
+    dragCard.classList.remove('dragging');
+    if(dMoved&&dragMemo){
+      let afterId=findDropTarget(e.clientX,e.clientY,dragMemo.id);
+      reorder(dragMemo.id,afterId);
+      document.getElementById('sortBy').value='manual';
+      render();
+    }
+    dragCard=null;dragMemo=null;dMoved=false;
+  });
+})();
 
 // ── Pull to refresh ──
 let pullStart=0;
