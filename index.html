@@ -427,7 +427,16 @@ function createCard(m){
     '</div>'+
     '<div class="actions">'+actHTML+'</div>';
 
-  // ── Swipe on card body (horizontal only) ──
+  // ── Swipe actions (blue edit + red delete behind card) ──
+  let sa=document.createElement('div');sa.className='swipe-actions';
+  let eBtn=document.createElement('button');eBtn.className='sw-edit';eBtn.textContent='编辑';
+  eBtn.onclick=function(e){e.stopPropagation();openDialog(m.id);card.style.transform='';};
+  let dBtn=document.createElement('button');dBtn.className='sw-del';dBtn.textContent='删除';
+  dBtn.onclick=function(e){e.stopPropagation();del(m.id);card.style.transform='';};
+  sa.appendChild(eBtn);sa.appendChild(dBtn);
+  wrap.appendChild(sa);wrap.appendChild(card);
+
+  // ── Swipe gesture (left swipe to reveal) ──
   let sSX=0,sOX=0,sActive=false;
   card.addEventListener('touchstart',e=>{
     if(e.target.closest('.grip')||e.target.closest('.actions')||e.target.closest('button')||e.target.closest('input'))return;
@@ -437,13 +446,25 @@ function createCard(m){
   card.addEventListener('touchmove',e=>{
     if(!sActive)return;
     let dx=e.touches[0].clientX-sSX;
-    if(Math.abs(dx)>5){card.style.transform='translateX('+(Math.max(-144,Math.min(144,sOX+dx)))+'px)';e.preventDefault();}
+    if(Math.abs(dx)>5){
+      // Only allow left swipe (negative transform)
+      let tx=Math.max(-150,Math.min(0,sOX+dx));
+      card.style.transform='translateX('+tx+'px)';
+      e.preventDefault();
+    }
   },{passive:false});
   card.addEventListener('touchend',()=>{
     if(!sActive)return;sActive=false;
     card.style.transition='transform .3s cubic-bezier(.25,.8,.25,1.2)';
     let tx=parseFloat(card.style.transform.replace(/translateX\(([^p]+)px\).*/,'$1')||0);
-    card.style.transform=Math.abs(tx)>72?'translateX(144px)':'';
+    // Snap: below -75px → fully open (-150px), otherwise close
+    card.style.transform=tx<-75?'translateX(-150px)':'';
+  });
+  // Tap on card body closes swipe
+  card.addEventListener('click',e=>{
+    if(e.target.closest('.grip')||e.target.closest('.actions')||e.target.closest('button')||e.target.closest('input')||e.target.closest('.swipe-actions'))return;
+    let tx=parseFloat(card.style.transform.replace(/translateX\(([^p]+)px\).*/,'$1')||0);
+    if(tx<0)card.style.transform='';
   });
   return wrap;
 }
