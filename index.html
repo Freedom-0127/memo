@@ -516,9 +516,13 @@ function openDialog(id){
   catSel.value=m?m.category:'未分类';
 
   let cp=document.getElementById('colorPalette');
-  cp.innerHTML=DEFAULT_COLORS.map((c,i)=>
-    '<div class="color-dot'+(selColor===c.val?' sel':'')+'" style="background:'+(c.val||'linear-gradient(135deg,#ccc 50%,#666 50%)')+'" title="'+c.n+'" onclick="pickColor('+i+')"></div>'
-  ).join('')+'<input type="color" id="customColor" style="width:32px;height:32px;border:none;border-radius:50%;cursor:pointer" onchange="pickCustom()" title="取色盘">';
+  cp.innerHTML=DEFAULT_COLORS.map((c,i)=>{
+    let bg=c.val?c.val:'#e5e5ea';
+    let extra=c.val?'':' border:2px solid #aaa;';
+    return '<div class="color-dot'+(selColor===c.val||(!c.val&&!selColor)?' sel':'')+'" style="background:'+bg+';'+extra+'" title="'+c.n+'" onclick="pickColor('+i+')"><span style="font-size:10px;color:#888;display:'+(c.val?'none':'block')+'">默认</span></div>';
+  }).join('')+
+  '<div class="color-dot" style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);border-radius:50%;width:30px;height:30px;cursor:pointer;position:relative;overflow:hidden" onclick="document.getElementById(\'customColor\').click()" title="取色盘">'+
+  '<input type="color" id="customColor" style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%" onchange="pickCustom()"></div>';
 
   buildPresets(m);
   document.getElementById('dlgOverlay').style.display='flex';
