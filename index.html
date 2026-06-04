@@ -201,6 +201,11 @@ body{
 .list-horizontal .card::before{left:0;top:8px;bottom:8px;width:3px}
 .list-horizontal .swipe-actions{display:none}
 
+/* todo */
+.todo-line{display:flex;align-items:flex-start;gap:6px;padding:2px 0}
+.todo-line input[type=checkbox]{width:18px;height:18px;flex-shrink:0;margin-top:2px;accent-color:var(--accent)}
+.todo-done{text-decoration:line-through;color:var(--text2);opacity:.6}
+
 .ghost{position:fixed;z-index:200;pointer-events:none;background:var(--card);border-radius:var(--radius);padding:12px 18px;box-shadow:0 12px 36px rgba(0,0,0,.18);font-weight:700;font-size:14px;opacity:.92;transform:translate(-50%,-50%)}
 
 /* status bar */
@@ -236,6 +241,7 @@ body{
   <button class="active" onclick="setTab('all')"><span class="ico">📋</span>全部</button>
   <button onclick="setTab('todo')"><span class="ico">⏰</span>待提醒</button>
   <button onclick="setTab('pinned')"><span class="ico">📌</span>置顶</button>
+  <button onclick="setTab('trash')"><span class="ico">🗑</span>废纸篓</button>
   <button onclick="toggleLayout()" id="layoutTabBtn"><span class="ico">☰</span>布局</button>
 </div>
 
@@ -270,7 +276,12 @@ body{
   <select id="ctMin"></select>分
 </div>
 <label style="margin-top:8px"><input type="checkbox" id="dlgPinned"> 置顶</label>
+<label style="margin-top:8px"><input type="checkbox" id="dlgEncrypt" onchange="toggleEncrypt()"> 🔒 加密笔记</label>
+<div id="encryptSection" style="display:none">
+  <input type="password" id="dlgPassword" placeholder="设置 4-6 位密码" maxlength="6" minlength="4" style="width:100%;border:none;border-radius:10px;padding:10px;font-size:15px;background:var(--bg);color:var(--text);outline:none;font-family:inherit;-webkit-appearance:none;margin-top:4px">
+</div>
 <div class="btn-row">
+  <button class="btn-cancel" onclick="exportMemo(editingId)" type="button" style="margin-right:auto">🖨 导出</button>
   <button class="btn-cancel" onclick="closeDialog()">取消</button>
   <button class="btn-save" onclick="saveMemo()">保存</button>
 </div>
@@ -304,7 +315,8 @@ function addMemo(m){
   m.font_color=m.font_color||null;m.color=m.color||null;
   m.category=m.category||'未分类';m.pinned=m.pinned||false;
   m.reminder_time=m.reminder_time||null;m.reminded=m.reminded||false;
-  m.position=m.position||Date.now()/1000;
+  m.position=m.position||Date.now()/1000;m.deleted=m.deleted||false;m.deleted_at=m.deleted_at||null;
+  m.encrypted=m.encrypted||false;m.pwd_hash=m.pwd_hash||null;
   memos.push(m);save();return m;
 }
 function updateMemo(id,u){
@@ -312,11 +324,17 @@ function updateMemo(id,u){
   Object.assign(m,u,{updated_at:new Date().toISOString()});
   save();return m;
 }
-function deleteMemo(id){memos=memos.filter(x=>x.id!==id);save();}
+// ── Trash (soft delete) ──
+function deleteMemo(id){softDelete(id);}
+function softDelete(id){let m=memos.find(x=>x.id===id);if(m){m.deleted=true;m.deleted_at=new Date().toISOString();save();}}
+function restoreMemo(id){let m=memos.find(x=>x.id===id);if(m){m.deleted=false;m.deleted_at=null;save();}}
+function permanentDelete(id){memos=memos.filter(x=>x.id!==id);save();}
+function cleanTrash(){let cutoff=new Date(Date.now()-30*86400000).toISOString();memos=memos.filter(m=>!m.deleted||m.deleted_at>cutoff);save();}
 function getCategories(){return[...new Set(memos.map(m=>m.category))].sort();}
 
 function getSorted(sortBy){
-  let ms=[...memos],p=ms.filter(m=>m.pinned),u=ms.filter(m=>!m.pinned);
+  let active=memos.filter(m=>!m.deleted);
+  let ms=[...active],p=ms.filter(m=>m.pinned),u=ms.filter(m=>!m.pinned);
   let sk=m=>m.reminder_time?[0,m.reminder_time]:[1,'9999'];
   p.sort((a,b)=>sk(a)[1].localeCompare(sk(b)[1]));
   if(sortBy==='manual')u.sort((a,b)=>a.position-b.position);
@@ -352,6 +370,7 @@ function render(){
   // tab filter
   if(currentTab==='todo')ms=ms.filter(m=>m.reminder_time&&!m.reminded);
   if(currentTab==='pinned')ms=ms.filter(m=>m.pinned);
+  if(currentTab==='trash')ms=memos.filter(m=>m.deleted);
 
   let list=document.getElementById('list'),empty=document.getElementById('empty');
   list.innerHTML='';
@@ -384,16 +403,29 @@ function createCard(m){
   let pre='';if(m.pinned)pre+='📌';if(m.reminder_time)pre+=new Date(m.reminder_time)<=new Date()?'🔔':'⏰';
   let rd=m.reminder_time?fmtDT(new Date(m.reminder_time)):'';
   let cd=fmtDT(new Date(m.created_at));
-  let cnt=m.content||'(无内容)';
+  let cnt=m._decrypted||m.content||'(无内容)',cntDisplay=(m.encrypted&&!m._unlocked)?
+    '<div class="enc-lock" onclick="unlockMemo(\''+m.id+'\')" style="cursor:pointer;color:var(--text2)">🔒 已加密 · 点击解锁查看</div>':
+    renderTodos(cnt,fs,fw,fc);
+  let isTrash=m.deleted;
+
+  let actHTML=isTrash?
+    '<button onclick="restoreMemo(\''+m.id+'\');render()" title="恢复">↩</button><button onclick="permanentDelete(\''+m.id+'\');render()" title="彻底删除">✕</button>'+
+    '<button onclick="shareMemo(\''+m.id+'\')" title="分享">📤</button>':
+    (m.encrypted?
+      '<button onclick="unlockMemo(\''+m.id+'\')" title="解锁">🔓</button><button onclick="del(\''+m.id+'\')">🗑</button>':
+      '<button onclick="openDialog(\''+m.id+'\')">✏</button><button onclick="del(\''+m.id+'\')">🗑</button>')+
+    '<button onclick="shareMemo(\''+m.id+'\')" title="分享">📤</button>';
+
+  let encIcon=m.encrypted?'🔒 ':'';
 
   card.innerHTML=
     '<div class="grip">'+'<span></span>'.repeat(6)+'</div>'+
     '<div class="body">'+
-      '<div class="top"><span class="title" style="font-size:'+(Math.min(fs+3,26))+'px;font-weight:bold;color:'+fc+'">'+pre+' '+h(m.title)+'</span><span class="cat">'+h(m.category)+'</span></div>'+
-      '<div class="preview" style="font-size:'+fs+'px;font-weight:'+fw+';color:'+fc+'">'+h(cnt.length>100?cnt.slice(0,100)+'...':cnt)+'</div>'+
+      '<div class="top"><span class="title" style="font-size:'+(Math.min(fs+3,26))+'px;font-weight:bold;color:'+fc+'">'+pre+' '+encIcon+h(m.title)+'</span><span class="cat">'+h(m.category)+'</span></div>'+
+      '<div class="preview todo-area" style="font-size:'+fs+'px;font-weight:'+fw+';color:'+fc+'">'+cntDisplay+'</div>'+
       '<div class="meta"><span>'+(rd?'提醒 '+rd+' · ':'')+'创建 '+cd+'</span></div>'+
     '</div>'+
-    '<div class="actions"><button onclick="openDialog(\''+m.id+'\')">✏</button><button onclick="del(\''+m.id+'\')">🗑</button></div>';
+    '<div class="actions">'+actHTML+'</div>';
 
   // ── Swipe actions ──
   let sa=document.createElement('div');sa.className='swipe-actions';
@@ -490,6 +522,62 @@ function createCard(m){
 function fmtDT(d){return d.toLocaleString('zh-CN',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit'})}
 function h(s){let d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
+// ── Todo checkboxes ──
+function renderTodos(text,fs,fw,fc){
+  if(!text)return '(无内容)';
+  let lines=text.split('\n'),html='',anyTodo=false;
+  lines.forEach(line=>{
+    let m=line.match(/^-\s*\[([ x])\]\s*(.*)/);
+    if(m){
+      anyTodo=true;
+      let checked=m[1]==='x',cls=checked?'todo-done':'',chk=checked?'checked':'';
+      html+='<div class="todo-line" style="font-size:'+fs+'px;color:'+fc+'"><input type="checkbox" '+chk+' onchange="toggleTodo(this)" '+(fc?'style="accent-color:'+fc+'"':'')+'><span class="'+cls+'">'+h(m[2])+'</span></div>';
+    }else{html+=h(line)+'<br>';}
+  });
+  if(!anyTodo)return h(text.length>100?text.slice(0,100)+'...':text).replace(/\n/g,'<br>');
+  return html;
+}
+function toggleTodo(cb){
+  let line=cb.nextElementSibling.textContent,cardEl=cb.closest('.card');
+  if(!cardEl)return;let id=cardEl.dataset.id,m=memos.find(x=>x.id===id);if(!m)return;
+  let lines=m.content.split('\n'),changed=false;
+  lines=lines.map(l=>{if(l.match(/^-\s*\[[ x]\]\s*(.*)/)&&l.includes(line)){changed=true;return cb.checked?l.replace('[ ]','[x]'):l.replace('[x]','[ ]')}return l});
+  if(changed){m.content=lines.join('\n');save();render();scheduleReminders();}
+}
+
+// ── Share ──
+function shareMemo(id){
+  let m=memos.find(x=>x.id===id);if(!m)return;
+  let text=m.title+'\n\n'+m.content;
+  if(navigator.share){navigator.share({title:m.title,text:text}).catch(()=>{})}
+  else{navigator.clipboard.writeText(text).then(()=>alert('已复制到剪贴板'));}
+}
+
+// ── Encryption ──
+async function encryptContent(content,password){
+  let enc=new TextEncoder(),keyMaterial=await crypto.subtle.digest('SHA-256',enc.encode(password));
+  let key=await crypto.subtle.importKey('raw',keyMaterial,{name:'AES-GCM'},false,['encrypt']);
+  let iv=crypto.getRandomValues(new Uint8Array(12));
+  let encrypted=await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},key,enc.encode(content));
+  let combined=new Uint8Array(iv.length+encrypted.byteLength);
+  combined.set(iv);combined.set(new Uint8Array(encrypted),iv.length);
+  return btoa(String.fromCharCode(...combined));
+}
+async function decryptContent(encData,password){
+  try{
+    let combined=Uint8Array.from(atob(encData),c=>c.charCodeAt(0));
+    let iv=combined.slice(0,12),data=combined.slice(12);
+    let enc=new TextEncoder(),keyMaterial=await crypto.subtle.digest('SHA-256',enc.encode(password));
+    let key=await crypto.subtle.importKey('raw',keyMaterial,{name:'AES-GCM'},false,['decrypt']);
+    let decrypted=await crypto.subtle.decrypt({name:'AES-GCM',iv:iv},key,data);
+    return new TextDecoder().decode(decrypted);
+  }catch(e){return null;}
+}
+async function hashPassword(pwd){
+  let hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(pwd));
+  return btoa(String.fromCharCode(...new Uint8Array(hash)));
+}
+
 // ── Drop target ──
 function findDropTarget(rx,ry,excludeId){
   let cards=[...document.querySelectorAll('.card')].filter(c=>c.dataset.id!==excludeId);
@@ -503,12 +591,15 @@ function openDialog(id){
   document.getElementById('dlgTitle').textContent=id?'编辑备忘录':'添加备忘录';
   let m=id?memos.find(x=>x.id===id):null;
   document.getElementById('dlgTitleInput').value=m?m.title:'';
-  document.getElementById('dlgContent').value=m?m.content:'';
+  document.getElementById('dlgContent').value=(m&&m.encrypted&&m._decrypted)?m._decrypted:(m?m.content:'');
   document.getElementById('dlgPinned').checked=m?m.pinned:false;
   document.getElementById('dlgFontSize').value=m?m.font_size:13;
   document.getElementById('dlgFontBold').checked=m?m.font_bold:false;
   document.getElementById('dlgFontColor').value=m&&m.font_color?m.font_color:'#000000';
   selColor=m?m.color:null;
+  document.getElementById('dlgEncrypt').checked=m?m.encrypted:false;
+  document.getElementById('dlgPassword').value='';
+  toggleEncrypt();
 
   let cats=[...new Set([...DEFAULT_CATS,...getCategories()])].sort();
   let catSel=document.getElementById('dlgCat');
@@ -575,11 +666,16 @@ function updateDays(){
   document.getElementById('ctDay').innerHTML=[...Array(max)].map((_,i)=>'<option>'+(i+1)+'</option>').join('');
 }
 
-function saveMemo(){
+async function saveMemo(){
   let title=document.getElementById('dlgTitleInput').value.trim();
   let content=document.getElementById('dlgContent').value.trim();
   if(!title){alert('标题不能为空');return}
   if(!content){alert('内容不能为空');return}
+  let encrypt=document.getElementById('dlgEncrypt').checked;
+  let pwd=document.getElementById('dlgPassword').value;
+  if(encrypt){
+    if(!pwd||pwd.length<4){alert('加密密码至少4位');return}
+  }
   let ps=buildPresetList();let rem=null;
   if(selPreset!==null&&selPreset!==undefined){
     if(selPreset===ps.length-1){
@@ -596,10 +692,41 @@ function saveMemo(){
     font_bold:document.getElementById('dlgFontBold').checked,
     font_color:document.getElementById('dlgFontColor').value||null,
     reminder_time:rem,reminded:rem?false:undefined,
-    pinned:document.getElementById('dlgPinned').checked};
+    pinned:document.getElementById('dlgPinned').checked,
+    encrypted:encrypt,pwd_hash:encrypt?await hashPassword(pwd):null};
+  if(encrypt)data.content=await encryptContent(content,pwd);
   if(editingId)updateMemo(editingId,data);else addMemo(data);
   closeDialog();render();scheduleReminders();
   if(navigator.vibrate)navigator.vibrate(10);
+}
+
+function toggleEncrypt(){
+  document.getElementById('encryptSection').style.display=document.getElementById('dlgEncrypt').checked?'block':'none';
+}
+
+async function unlockMemo(id){
+  let m=memos.find(x=>x.id===id);if(!m||!m.encrypted)return;
+  let pwd=prompt('请输入密码解锁笔记：');if(!pwd)return;
+  let decrypted=await decryptContent(m.content,pwd);
+  let hash=await hashPassword(pwd);
+  if(decrypted!==null&&hash===m.pwd_hash){
+    m._decrypted=decrypted;m._unlocked=true;
+    render();
+  }else{alert('密码错误')}
+}
+
+function showDecrypted(id){
+  let m=memos.find(x=>x.id===id);if(!m||!m.encrypted||!m._unlocked)return;
+  return m._decrypted;
+}
+
+function exportMemo(id){
+  let m=id?memos.find(x=>x.id===id):null;
+  if(!m){alert('请先保存备忘后再导出');return}
+  let cnt=m.encrypted&&m._decrypted?m._decrypted:m.content;
+  let w=window.open('','_blank','width=600,height=800');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="UTF-8"><title>'+h(m.title)+'</title><style>body{font-family:sans-serif;padding:20px;max-width:600px;margin:auto;line-height:1.8}h1{margin-bottom:8px}.meta{color:#888;font-size:13px;margin-bottom:20px}.content{white-space:pre-wrap;font-size:15px}@media print{body{padding:0}}</style></head><body><h1>'+h(m.title)+'</h1><div class="meta">'+fmtDT(new Date(m.created_at))+' · '+h(m.category)+'</div><div class="content">'+h(cnt)+'</div></body></html>');
+  w.document.close();setTimeout(()=>w.print(),500);
 }
 function buildPresetList(){
   let now=new Date();now.setSeconds(0,0);let t=now.toISOString().slice(0,10);
@@ -614,7 +741,7 @@ function del(id){if(confirm('确定删除这条备忘录？')){deleteMemo(id);re
 // ── Tabs ──
 function setTab(t){
   currentTab=t;
-  document.querySelectorAll('.tab-bar button').forEach((b,i)=>{let tabs=['all','todo','pinned'];b.classList.toggle('active',tabs[i]===t)});
+  document.querySelectorAll('.tab-bar button').forEach((b,i)=>{let tabs=['all','todo','pinned','trash'];b.classList.toggle('active',tabs[i]===t)});
   document.getElementById('layoutTabBtn').classList.remove('active');
   render();
 }
@@ -664,7 +791,7 @@ document.getElementById('content').addEventListener('touchend',()=>{
 });
 
 // ── Init ──
-load();render();scheduleReminders();
+load();cleanTrash();render();scheduleReminders();
 setInterval(()=>{scheduleReminders();updateStatus()},30000);
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
 </script>
